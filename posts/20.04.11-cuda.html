@@ -93,7 +93,11 @@ What you must remember, however, is that GPUs have **massive** memory bandwidth
 (900GB/s on Volta, while even the best CPUs won't go past 100GB/s), and if your
 application can benefit that, then you should probably go for it. Even a mildly
 tuned GPU application can outperform its well optimized CPU counterpart quite
-easily. But the good news is that you don't have to optimize them by yourself:
+easily, as long as **all** the code of your application gets to run on the
+GPU. Otherwise its performance will be greatly impacted by the bandwidth of
+CPU/GPU intercom (ie. PCI-E).
+
+The good news is that you don't have to optimize GPU code by yourself:
 Nvidia did that effort before you, and packed efficient routines in libraries
 like Thrust, CUB, and cuBLAS.
 
