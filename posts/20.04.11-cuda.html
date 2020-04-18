@@ -86,8 +86,9 @@ having too many threads within a block...
 I think you got it: tuning kernels for GPUs is **difficult**. Nvidia has some
 great documentation about how to do it[^turing-tuning], but doing it for every
 architecture ends up being an incredibly time-consuming process, and I didn't
-even talk about more specific things such as thread synchronization or shuffle
-instructions.
+even talk about more specific things such as thread synchronization, shuffle
+instructions, or simply how to correctly address memory in order to maximize
+data locality.
 
 What you must remember, however, is that GPUs have **massive** memory bandwidth
 (900GB/s on Volta, while even the best CPUs won't go past 100GB/s), and if your
