@@ -99,21 +99,77 @@ like Thrust, CUB, and cuBLAS.
 
 ## The CUDA tooling ecosystem
 
-### Compilers
-
-- Oubliez nvcc, Clang supporte CUDA C++ nativement!
-  - Meilleur support de C++, de la STL, des templates...
-  - Open-source (maintenu activement par Google)
-  - Make & CMake: https://github.com/JPenuchot/project-templates
---> Méthode simple: rajouter `-x cuda` à Clang sur les fichiers `.cpp`
+Now we'll have a closer look at the tools and libraries you can use to get the
+most out of your GPUs, without spending too much time reimplementing the wheel.
 
 ### Libraries
 
-- Utilisez les algorithmes/conteneurs de Thrust...
-  - API style STL (merci Bryce Lelbach)
-  - `thrust::vector`, algorithmes Thrust, etc.
-  - Très bien optimisés pour chaque cas/archi (shared memory, shuffle, etc)
-  ...et cuBLAS pour l'algèbre !
+Libraries in CUDA C++ are the key to well performing programs across
+generations of GPU architectures. They gather all the optimization tricks
+you'll need and make them easily reusable for you at no cost, thanks the C++
+zero-cost abstraction principle.
+
+The first library you should think about when writing CUDA code is
+Thrust[^thrust]. It is made to be a drop-in replacement to the STL, but with
+CUDA compatibility, a few extra algorithms, and that with very high
+performance implementations.
+
+Its [documentation](https://thrust.github.io/doc/modules.html) is pretty
+straightforward, and any code you implement using Thrust can run on both CPU
+and GPU. If your problem can be solved using Thurst's primitives, just go for
+it. It is provided in the CUDA package, so you can think of it like the CUDA
+standard library.
+
+If your implementation requires more specialized algorithmic skeletons however,
+make sure you have a look at CUB[^cub]. It is designed to provide you with
+primitives at all scales: device-wide (invokable from the CPU), block-wide
+(to abstract things that require shared memory, for example), and warp-wide
+(all the way down to CUDA assembly (aka PTX) intrinsics) primitives.
+
+Similarly to Thrust, CUB's primitives are optimized for all CUDA GPU
+architectures, but they offer different grains for optimization at all scales,
+and they are specific to GPUs (as in not CPU-compatible).
+
+And finally for domain-specific tasks, Nvidia has you covered
+again[^gpu-libraries] from linear algebra with
+[cuBLAS](https://developer.nvidia.com/cublas), all the way to signal processing
+with [cuFFT](https://docs.nvidia.com/cuda/cufft/index.html), and many other.
+
+### Compilers
+
+Compilers however is a grey area of CUDA development. The only two compilers
+that support CUDA C++ are `nvcc` and `clang`. `nvcc` is the only one that's
+officially supported by Nvidia, but don't get fooled: `clang` is a **much
+better** option.
+
+`nvcc`'s C++ frontend is full of shortcomings, it's not hard to find its limits
+when you try to compile regular C++ code: parts of the STL can *not* compile
+with `nvcc`, and some libraries that rely heavily on template resolution
+mechanisms such as Blaze will probably never get to compile with it. `nvcc`
+doesn't even support C++17, and even its C++14 is **very** fragile. It lacks
+the error reporting you find on regular C++ compilers making your code hard to
+debug... So overall, `nvcc` is not a great tool. It will mostly get in your
+way, force you to reorganize your project between C++ and CUDA C++ code, link
+them together, thus making templates unavailable between C++ and CUDA C++ code.
+Basically, you'll have to rearrange your whole project just to tackle `nvcc`'s
+poor C++ support.
+
+On the other hand `clang` has bulletproof support for C++, and CUDA C++ as
+well. All the CUDA libraries will compile with `clang`, and while it's lagging
+behind `nvcc` when it comes to the latest CUDA version supported, it's not even
+*that* bad, and its support for modern C++ standards is just a whole different
+story.
+
+Even the CLI is better with `clang`. It supports the same flags as `gcc`. This
+is very important and underrated, because it also means that you won't have to
+do anything but add a `-x cuda` flag to compile `.cpp` files with CUDA C++
+support. You look at my
+[project templates](https://github.com/JPenuchot/project-templates) if you want
+to know more about how to compile CUDA code using `clang` with both `make` and
+`cmake`.
+
+And finally, `clang` is and will always remain open-source. It is a mainline
+feature, Google supports it and will continue supporting it in the future.
 
 ### General advice
 
@@ -186,6 +242,12 @@ Utilisez cuBLAS !
 [^turing]: https://devblogs.nvidia.com/nvidia-turing-architecture-in-depth/
 
 [^turing-tuning]: https://docs.nvidia.com/cuda/archive/10.1/pdf/Turing_Tuning_Guide.pdf
+
+[^thrust]: https://thrust.github.io/
+
+[^cub]: https://nvlabs.github.io/cub/index.html
+
+[^gpu-libraries]: https://developer.nvidia.com/gpu-accelerated-libraries
 
 <!-- End of Document -->
 
