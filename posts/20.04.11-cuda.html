@@ -1,6 +1,6 @@
 <!--
   Compilaction Blog
-  Copyright 2020 ???
+  Copyright 2020 Jules Pénuchot
 
   Licensed under the MIT License <http://opensource.org/licenses/MIT>.
   SPDX-License-Identifier: MIT
@@ -16,22 +16,176 @@
 
 <center>
   <big>
-    [**A Simpler CUDA Introduction**](20.04.11-cuda.html)
+    [**A Simpler Introduction To CUDA**](20.04.11-cuda.html)
   </big>
 </center>
 
-Lorem ipsum dolor sit amet[^someref], consectetur adipisicing elit, sed do
-eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim
-veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
-consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
-cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
-proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+This article aims to provide you with the best practices to start CUDA C++
+programming, in order to write clean, efficient code without breaking a sweat.
+We'll first go through what CUDA C++ is to begin with, detail what a modern
+CUDA architecture is like, then finish with an overview of the CUDA ecosystem
+and what tools you should use.
+
+## What is CUDA C++ in the first place ?
+
+CUDA C++ is described by Nvidia as a super-set of C++, which means you should
+be able to run any C++ program on your GPU, but more specifically that the
+**memory model** implemented by CUDA C++ is compliant with **standard C++**.
+
+While it is *mostly* true, the language compatibility will depend on which
+compiler you're using. Also you'll only be able to run "device" functions in
+your CUDA code. "host" functions on the other hand can only run on the CPU.
+
+"global" functions are used as the entry point for GPU computation, as these
+are invoked from the CPU and run on the GPU. Two parameters must be given in
+addition to their regular parameters: the thread block grid's dimension, and
+the dimension of a thread block.
+
+```C++
+my_func<<< 16, 256 >>>(); // Invokes 16 blocks of 256 threads running my_func
+```
+
+All threads within a block share the same shared memory/cache.
+
+For several reasons including this one, thread block sizing can have a **very
+high impact** on performance. This, and the bug-inducing hassle it causes to
+have two levels of sizing, is why you should stay away from invoking kernels
+by yourself. The good news is that Nvidia provides great tools that will take
+care of those matters for you, and we'll see them. But first, we'll do a quick
+overview of a CUDA GPU architecture.
+
+## Short briefing to a CUDA GPU architecture
+
+CUDA GPU architectures can vary quite a lot, but they do revolve around the
+same idea: they simply have lots of powerful SIMD processing units. CUDA
+threads are grouped into "wraps", and run simultaneously, meaning that all the
+"threads" within the same wrap will be executing the same instruction at the
+same time. And when threads diverge after a condition, they can't all be run
+simultaneously anymore: the two branches will have to be executed
+consecutively, and then the two groups of threads will resume simultaneous
+execution. This is something you can achieve with SIMD processing on CPUs by
+doing masking on your registers.
+
+However, GPUs improves branching performance by grouping several wraps within
+larger units called Streaming Multiprocessors, in which threads can be
+rescheduled. That way, when two groups of threads diverge, they can be
+redispatched to make sure that the two groups are run in different wraps that
+can be run simultaneously, thus mitigating the performance loss induced by
+branching.
+
+In the Turing architecture[^turing], streaming multiprocessors pack four
+processing blocks (ie. SIMD cores) that can execute 32 threads per clock. These
+four blocks share 96KB of L1 cache/shared memory (which you can configure to
+choose between more cache or more shared memory to fit your needs).
+
+Because SMs have 4 processing blocks that can execute up to 32 threads at a
+time on the Turing architecture, you should use block sizes that are multiples
+of 32, but make sure that you don't saturate the L1 cache or shared memory by
+having too many threads within a block...
+
+I think you got it: tuning kernels for GPUs is **difficult**. Nvidia has some
+great documentation about how to do it[^turing-tuning], but doing it for every
+architecture ends up being an incredibly time-consuming process, and I didn't
+even talk about more specific things such as thread synchronization or shuffle
+instructions.
+
+What you must remember, however, is that GPUs have **massive** memory bandwidth
+(900GB/s on Volta, while even the best CPUs won't go past 100GB/s), and if your
+application can benefit that, then you should probably go for it. Even a mildly
+tuned GPU application can outperform its well optimized CPU counterpart quite
+easily. But the good news is that you don't have to optimize them by yourself:
+Nvidia did that effort before you, and packed efficient routines in libraries
+like Thrust, CUB, and cuBLAS.
+
+## The CUDA tooling ecosystem
+
+### Compilers
+
+- Oubliez nvcc, Clang supporte CUDA C++ nativement!
+  - Meilleur support de C++, de la STL, des templates...
+  - Open-source (maintenu activement par Google)
+  - Make & CMake: https://github.com/JPenuchot/project-templates
+--> Méthode simple: rajouter `-x cuda` à Clang sur les fichiers `.cpp`
+
+### Libraries
+
+- Utilisez les algorithmes/conteneurs de Thrust...
+  - API style STL (merci Bryce Lelbach)
+  - `thrust::vector`, algorithmes Thrust, etc.
+  - Très bien optimisés pour chaque cas/archi (shared memory, shuffle, etc)
+  ...et cuBLAS pour l'algèbre !
+
+### General advice
+
+- Profiling: NSight
+
+- Tout faire sur le GPU > Offloader au GPU (bus PCIe etc...)
+
+  - Forget `nvcc`
+  - In Thrust we Trust
+  - In CUB we cub
+
+### For more specific cases
+
+- Point d'entrée - Fonctions "global": `void __global__ fun( ... ) { ... }`
+  Appel: `fun <<< grid_size, block_size >>> ( ... );`
+  --> Le CPU pilote des appels sur des données dans la mémoire GPU
+      /!\ Ne passer que des pointeurs, itérateurs, vues, etc.
+
+- Fonctions & lambdas `__host__ __device__` ou `constexpr` appelables sur GPU
+
+- `cudaManagedAlloc()`: Alloue de la mémoire unifiée (Accessible via CPU & GPU)
+  --> Pas besoin de `cudaMemCpy()`, géré par pagination en x86, via une fabric
+      avec NVLink sous PowerPC (meilleures perfs, moins de latence, etc...)
+  --> Utilisable comme allocateur pour std::vector
+
+
+Unrolling & memory addressing:
+
+Mémoire:
+| 0| 1| 2| 3| 4| 5| 6| 7|
+
+Threads 1, 2, 3 & 4, itérations 1 & 2:
+
+i\T| 1  2  3  4
+0  | 0| 1| 2| 3|
+1  | 4| 5| 6| 7|
+  --> Adressage contigu, OK
+
+i\T| 1  2  3  4
+0  | 0| 2| 4| 6|
+1  | 1| 3| 5| 7|
+  --> Adressage non contigu, PAS OK: localité mauvaise
+
+## Conclusion
+
+
+Utilisez Clang !
+- Compilo C++ fail-proof
+- Interface simple et standard, facile à intégrer dans Make ou CMake
+- Plus besoin de faire de la compilation séparée à cause de nvcc
+
+Utilisez Thrust !
+- Simple & efficace
+- Inclus dans le package CUDA
+
+Utilisez cuBLAS !
+- Interface similaire à BLAS (diverge sur certains points: handles, storage)
+- Utilise du PTX "secret" et les tensor cores pour gagner des perfs
+
+--> Questions ? Illustration ?
 
 -------------------------------------------------------------------------------
 
 <!-- Footnotes -->
 
-[^someref]: put some note here
+[^cuda-intro]: https://devblogs.nvidia.com/even-easier-introduction-cuda/
+
+[^shared-mem]: https://devblogs.nvidia.com/using-shared-memory-cuda-cc/
+
+[^turing]: https://devblogs.nvidia.com/nvidia-turing-architecture-in-depth/
+
+[^turing-tuning]: https://docs.nvidia.com/cuda/archive/10.1/pdf/Turing_Tuning_Guide.pdf
 
 <!-- End of Document -->
 
